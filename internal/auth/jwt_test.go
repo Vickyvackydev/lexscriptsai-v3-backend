@@ -32,7 +32,7 @@ func TestTokenService_GenerateAndValidate(t *testing.T) {
 		t.Fatal("Tokens cannot be empty")
 	}
 
-	// Validate Access Token
+	// Validates Access Token 
 	claims, err := svc.ValidateToken(tokens.AccessToken, "access")
 	if err != nil {
 		t.Fatalf("Failed to validate access token: %v", err)
