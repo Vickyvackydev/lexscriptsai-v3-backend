@@ -1,0 +1,20 @@
+[Unit]
+Description=LexScripts AI v3 Backend (Production)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/lexscripts-backend-prod
+ExecStart=/var/www/lexscripts-backend-prod/server
+Restart=always
+RestartSec=5s
+EnvironmentFile=/var/www/lexscripts-backend-prod/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lexscripts-prod
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

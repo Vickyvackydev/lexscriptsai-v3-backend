@@ -1,0 +1,61 @@
+name: Deploy Backend (Systemd)
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Build Linux Go Binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o server ./cmd/server
+          ls -la server
+
+      - name: Determine Environment Target
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "TARGET_DIR=/var/www/lexscripts-backend-prod" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=lexscripts-backend-prod" >> $GITHUB_OUTPUT
+            echo "ENV_NAME=production" >> $GITHUB_OUTPUT
+          else
+            echo "TARGET_DIR=/var/www/lexscripts-backend-staging" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=lexscripts-backend-staging" >> $GITHUB_OUTPUT
+            echo "ENV_NAME=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy Binary to Droplet via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER || 'root' }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          port: ${{ secrets.DROPLET_PORT || 22 }}
+          source: "server,deploy"
+          target: ${{ steps.env.outputs.TARGET_DIR }}
+
+      - name: Restart Systemd Service via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER || 'root' }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          port: ${{ secrets.DROPLET_PORT || 22 }}
+          script: |
+            sudo chmod +x ${{ steps.env.outputs.TARGET_DIR }}/server
+            sudo chown -R www-data:www-data ${{ steps.env.outputs.TARGET_DIR }}
+            sudo systemctl restart ${{ steps.env.outputs.SERVICE_NAME }}
+            sudo systemctl status ${{ steps.env.outputs.SERVICE_NAME }} --no-pager
