@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -19,10 +20,14 @@ type TranscriptionService struct {
 	storageService      *StorageService
 	emailService        *EmailService
 	notificationService *NotificationService
+	mediaService        *MediaService
 	jobQueue            chan uuid.UUID
 }
 
-func NewTranscriptionService(db *gorm.DB, whisperService *WhisperService, auditService *AuditService, storageService *StorageService, emailService *EmailService, notificationService *NotificationService) *TranscriptionService {
+func NewTranscriptionService(db *gorm.DB, whisperService *WhisperService, auditService *AuditService, storageService *StorageService, emailService *EmailService, notificationService *NotificationService, mediaService *MediaService) *TranscriptionService {
+	if mediaService == nil {
+		mediaService = NewMediaService()
+	}
 	svc := &TranscriptionService{
 		db:                  db,
 		whisperService:      whisperService,
@@ -30,6 +35,7 @@ func NewTranscriptionService(db *gorm.DB, whisperService *WhisperService, auditS
 		storageService:      storageService,
 		emailService:        emailService,
 		notificationService: notificationService,
+		mediaService:        mediaService,
 		jobQueue:            make(chan uuid.UUID, 100),
 	}
 
@@ -100,6 +106,36 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 	s.db.Save(&job)
 
 	audioURL := job.AudioURL
+
+	// If audioURL is a public media link (YouTube, Vimeo, Google Drive, direct web link), download & convert to WAV first
+	if (strings.HasPrefix(audioURL, "http://") || strings.HasPrefix(audioURL, "https://")) && !strings.Contains(audioURL, "storage.googleapis.com") {
+		log.Printf("[Worker] Detected public media link for job %s: %s. Initiating media resolution & conversion...", job.ID, audioURL)
+		wavPath, err := s.mediaService.DownloadAndConvert(audioURL)
+		if err != nil {
+			log.Printf("[Worker] Media resolution/download error for job %s: %v", job.ID, err)
+			s.handleFailure(&job, fmt.Sprintf("Failed to process media link: %v", err))
+			return
+		}
+		defer func() {
+			_ = os.Remove(wavPath)
+		}()
+
+		if s.storageService != nil {
+			f, openErr := os.Open(wavPath)
+			if openErr == nil {
+				objectKey := fmt.Sprintf("imports/%s_%s.wav", job.AccountID, job.ID)
+				gcsURL, uploadErr := s.storageService.UploadDirectStream(f, objectKey, "audio/wav")
+				f.Close()
+				if uploadErr == nil {
+					log.Printf("[Worker] Media WAV successfully uploaded to GCS: %s", gcsURL)
+					audioURL = gcsURL
+					s.db.Model(&models.Transcript{}).Where("id = ?", job.TranscriptID).Update("audio_url", gcsURL)
+					s.db.Model(&job).Update("audio_url", gcsURL)
+				}
+			}
+		}
+	}
+
 	if s.storageService != nil && strings.Contains(audioURL, "storage.googleapis.com") {
 		bucket := s.storageService.BucketName()
 		prefix := fmt.Sprintf("https://storage.googleapis.com/%s/", bucket)

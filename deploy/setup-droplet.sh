@@ -6,7 +6,11 @@ set -e
 
 echo "==> [1/6] Updating system packages & installing dependencies..."
 sudo apt update
-sudo apt install -y curl git nginx ufw certbot python3-certbot-nginx rsync
+sudo apt install -y curl git nginx ufw certbot python3-certbot-nginx rsync ffmpeg
+
+# Install yt-dlp binary system-wide
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
 
 echo "==> [2/6] Setting up application directories..."
 sudo mkdir -p /var/www/staging.v3.lexscriptsai.com

@@ -48,9 +48,10 @@ func main() {
 		log.Printf("[Warn] GCS initialization notice: %v", err)
 	}
 
+	mediaService := services.NewMediaService()
 	notificationService := services.NewNotificationService(db.DB)
 	whisperService := services.NewWhisperService(cfg)
-	transcriptionService := services.NewTranscriptionService(db.DB, whisperService, auditService, storageService, emailService, notificationService)
+	transcriptionService := services.NewTranscriptionService(db.DB, whisperService, auditService, storageService, emailService, notificationService, mediaService)
 	transcriptService := services.NewTranscriptService(db.DB, auditService, transcriptionService, storageService)
 	folderService := services.NewFolderService(db.DB, auditService)
 	causeListService := services.NewCauseListService(db.DB, auditService)
@@ -165,6 +166,7 @@ func main() {
 		adminGroup.PUT("/locations/:id", locationHandler.UpdateLocation)
 		adminGroup.DELETE("/locations/:id", locationHandler.DeleteLocation)
 		adminGroup.GET("/search", searchHandler.AdminSearch)
+		adminGroup.POST("/cookies", adminHandler.UpdateCookies)
 	}
 
 	// Account Owner Protected Endpoints

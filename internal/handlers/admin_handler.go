@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"lexscriptsai-v3-backend/internal/middleware"
@@ -266,4 +268,39 @@ func (h *AdminHandler) ResolveNotification(c echo.Context) error {
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"message": "Notification resolved"})
+}
+
+func (h *AdminHandler) UpdateCookies(c echo.Context) error {
+	file, err := c.FormFile("cookies")
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "FILE_REQUIRED", "Cookies file is required", nil)
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "OPEN_FAILED", "Failed to open cookies file", nil)
+	}
+	defer src.Close()
+
+	cookiePath := os.Getenv("YOUTUBE_COOKIES_PATH")
+	if cookiePath == "" {
+		cookiePath = "cookies.txt"
+	}
+
+	dst, err := os.Create(cookiePath)
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "SAVE_FAILED", "Failed to save cookies file", nil)
+	}
+	defer dst.Close()
+
+	if _, err = io.Copy(dst, src); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "COPY_FAILED", "Failed to write cookies file", nil)
+	}
+
+	actor := middleware.GetCurrentUser(c)
+	if actor != nil && h.auditService != nil {
+		h.auditService.Log(nil, "", actor.ID, actor.Name, "admin_cookies_updated", "system", "", "Updated YouTube cookies file", "", "")
+	}
+
+	return response.Success(c, http.StatusOK, map[string]string{"message": "YouTube cookies updated successfully"})
 }

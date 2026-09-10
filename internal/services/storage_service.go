@@ -262,3 +262,41 @@ func (s *StorageService) UploadMultipart(ctx context.Context, fileHeader *multip
 
 	return &fileRecord, publicURL, nil
 }
+
+func (s *StorageService) UploadDirectStream(r io.Reader, objectKey string, contentType string) (string, error) {
+	ctx := context.Background()
+	var publicURL string
+	uploadedToGCS := false
+
+	if s.client != nil && s.bucket != "" {
+		wc := s.client.Bucket(s.bucket).Object(objectKey).NewWriter(ctx)
+		if contentType != "" {
+			wc.ContentType = contentType
+		}
+		if _, errCopy := io.Copy(wc, r); errCopy == nil {
+			if errClose := wc.Close(); errClose == nil {
+				publicURL = fmt.Sprintf("https://storage.googleapis.com/%s/%s", s.bucket, objectKey)
+				uploadedToGCS = true
+			}
+		}
+	}
+
+	if !uploadedToGCS {
+		_ = os.MkdirAll("uploads", 0755)
+		localFilename := filepath.Base(objectKey)
+		localPath := filepath.Join("uploads", localFilename)
+
+		out, err := os.Create(localPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to create local file: %w", err)
+		}
+		defer out.Close()
+
+		if _, err = io.Copy(out, r); err != nil {
+			return "", fmt.Errorf("failed to write local file: %w", err)
+		}
+		publicURL = fmt.Sprintf("%s/uploads/%s", s.baseURL, localFilename)
+	}
+
+	return publicURL, nil
+}
