@@ -254,14 +254,20 @@ func (s *MediaService) downloadWithYtDlp(ctx context.Context, host, rawURL, outp
 	}
 
 	if strings.Contains(host, "youtube.com") || strings.Contains(host, "youtu.be") {
-		args = append(args, "--extractor-args", "youtube:player_client=web,mweb,android")
+		args = append(args, "--extractor-args", "youtube:player_client=ios,android,tv")
 	}
 
 	var cookiePaths []string
 	if envPath := os.Getenv("YOUTUBE_COOKIES_PATH"); envPath != "" {
 		cookiePaths = append(cookiePaths, envPath)
 	}
-	cookiePaths = append(cookiePaths, "/root/cookies.txt", "./cookies.txt", "cookies.txt")
+	cookiePaths = append(cookiePaths,
+		"/var/www/lexscripts-backend-staging/cookies.txt",
+		"/var/www/lexscripts-backend-prod/cookies.txt",
+		"/root/cookies.txt",
+		"./cookies.txt",
+		"cookies.txt",
+	)
 
 	for _, cp := range cookiePaths {
 		if _, err := os.Stat(cp); err == nil {
