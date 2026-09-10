@@ -242,7 +242,7 @@ func (s *MediaService) downloadWithYtDlp(ctx context.Context, host, rawURL, outp
 
 	downloadBase := outputBase + "_raw"
 	downloadTemplate := downloadBase + ".%(ext)s"
-	args := []string{
+	baseArgs := []string{
 		"-f", "ba/b/bestaudio/best",
 		"--no-playlist",
 		"--restrict-filenames",
@@ -253,10 +253,7 @@ func (s *MediaService) downloadWithYtDlp(ctx context.Context, host, rawURL, outp
 		rawURL,
 	}
 
-	if strings.Contains(host, "youtube.com") || strings.Contains(host, "youtu.be") {
-		args = append(args, "--extractor-args", "youtube:player_client=ios,android,tv")
-	}
-
+	var foundCookiePath string
 	var cookiePaths []string
 	if envPath := os.Getenv("YOUTUBE_COOKIES_PATH"); envPath != "" {
 		cookiePaths = append(cookiePaths, envPath)
@@ -271,26 +268,63 @@ func (s *MediaService) downloadWithYtDlp(ctx context.Context, host, rawURL, outp
 
 	for _, cp := range cookiePaths {
 		if _, err := os.Stat(cp); err == nil {
-			args = append([]string{"--cookies", cp}, args...)
-			log.Printf("[MediaService] Using YouTube cookies from: %s", cp)
+			foundCookiePath = cp
 			break
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, binPath, args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[MediaService] yt-dlp error for %s: %v\nOutput: %s", rawURL, err, string(out))
-		return "", fmt.Errorf("yt-dlp download failed: %v", err)
-	}
+	runYtDlp := func(useCookies bool, playerClient string) (string, error) {
+		args := make([]string, len(baseArgs))
+		copy(args, baseArgs)
 
-	matches, _ := filepath.Glob(downloadBase + ".*")
-	for _, m := range matches {
-		if !strings.HasSuffix(m, ".part") && !strings.HasSuffix(m, ".ytdl") {
-			return m, nil
+		if strings.Contains(host, "youtube.com") || strings.Contains(host, "youtu.be") {
+			if playerClient != "" {
+				args = append(args, "--extractor-args", "youtube:player_client="+playerClient)
+			}
 		}
+
+		if useCookies && foundCookiePath != "" {
+			args = append([]string{"--cookies", foundCookiePath}, args...)
+		}
+
+		cmd := exec.CommandContext(ctx, binPath, args...)
+		out, err := cmd.CombinedOutput()
+		outStr := string(out)
+		if err != nil {
+			return outStr, err
+		}
+
+		matches, _ := filepath.Glob(downloadBase + ".*")
+		for _, m := range matches {
+			if !strings.HasSuffix(m, ".part") && !strings.HasSuffix(m, ".ytdl") {
+				return m, nil
+			}
+		}
+		return outStr, fmt.Errorf("media output file not found")
 	}
 
-	return "", fmt.Errorf("download completed but output media file was not found")
+	// Attempt 1: With cookies (if available) & client=ios,android,tv
+	res1, err1 := runYtDlp(true, "ios,android,tv")
+	if err1 == nil && !strings.Contains(res1, "media output file not found") {
+		return res1, nil
+	}
+
+	log.Printf("[MediaService] Attempt 1 failed for %s: %v. Retrying without cookies...", rawURL, err1)
+
+	// Attempt 2: Without cookies (in case cookies are expired/invalid) & client=android,ios
+	res2, err2 := runYtDlp(false, "android,ios")
+	if err2 == nil && !strings.Contains(res2, "media output file not found") {
+		return res2, nil
+	}
+
+	// Attempt 3: Default yt-dlp extractors without cookies
+	res3, err3 := runYtDlp(false, "")
+	if err3 == nil && !strings.Contains(res3, "media output file not found") {
+		return res3, nil
+	}
+
+	log.Printf("[MediaService] All yt-dlp attempts failed for %s. Output: %s", rawURL, res3)
+	return "", fmt.Errorf("yt-dlp download failed: %v", err3)
 }
 
 func (s *MediaService) downloadDirectHTTP(rawURL, outputBase string) (string, error) {
