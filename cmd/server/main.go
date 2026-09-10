@@ -234,6 +234,7 @@ func main() {
 	authenticated.GET("/recycle-bin", recycleBinHandler.ListRecycleBin)
 	authenticated.POST("/recycle-bin/:id/restore", recycleBinHandler.Restore)
 	authenticated.DELETE("/recycle-bin/:id", recycleBinHandler.PermanentDelete)
+	authenticated.DELETE("/recycle-bin/:id/permanent", recycleBinHandler.PermanentDelete)
 
 	serverErrors := make(chan error, 1)
 	go func() {
