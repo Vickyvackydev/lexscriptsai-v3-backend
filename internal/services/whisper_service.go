@@ -167,10 +167,10 @@ func (w *WhisperService) MapSegmentsToSpeakerBanks(segments []whisperSegment) (m
 	totalWords := 0
 	maxDuration := 0.0
 
-	for i, seg := range segments {
+	for _, seg := range segments {
 		speakerName := strings.TrimSpace(seg.Speaker)
 		if speakerName == "" {
-			speakerName = fmt.Sprintf("SPEAKER %02d", i+1)
+			speakerName = "SPEAKER 01"
 		}
 
 		var words []models.Word
@@ -206,14 +206,19 @@ func (w *WhisperService) MapSegmentsToSpeakerBanks(segments []whisperSegment) (m
 			maxDuration = seg.End
 		}
 
-		speakerBanks = append(speakerBanks, models.SpeakerBank{
-			ID:             uuid.New().String(),
-			Name:           speakerName,
-			Words:          words,
-			ParagraphIndex: i,
-		})
+		// Merge consecutive segments belonging to the same speaker
+		if len(speakerBanks) > 0 && strings.EqualFold(speakerBanks[len(speakerBanks)-1].Name, speakerName) {
+			speakerBanks[len(speakerBanks)-1].Words = append(speakerBanks[len(speakerBanks)-1].Words, words...)
+		} else {
+			speakerBanks = append(speakerBanks, models.SpeakerBank{
+				ID:             uuid.New().String(),
+				Name:           speakerName,
+				Words:          words,
+				ParagraphIndex: len(speakerBanks),
+			})
+		}
 	}
 
-	log.Printf("[Whisper] Mapped %d segments, %d total words, duration: %.1fs", len(segments), totalWords, maxDuration)
+	log.Printf("[Whisper] Mapped %d segments into %d speaker banks, %d total words, duration: %.1fs", len(segments), len(speakerBanks), totalWords, maxDuration)
 	return speakerBanks, int(maxDuration), totalWords
 }
