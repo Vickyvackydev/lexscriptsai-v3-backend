@@ -303,23 +303,26 @@ func (s *MediaService) downloadWithYtDlp(ctx context.Context, host, rawURL, outp
 		return outStr, fmt.Errorf("media output file not found")
 	}
 
-	// Attempt 1: With cookies (if available) & client=ios,android,tv
-	res1, err1 := runYtDlp(true, "ios,android,tv")
-	if err1 == nil && !strings.Contains(res1, "media output file not found") {
+	// Attempt 1: Standard yt-dlp execution (uses Deno JS solver natively)
+	res1, err1 := runYtDlp(false, "")
+	if err1 == nil && !strings.HasPrefix(res1, "media output file not found") {
 		return res1, nil
 	}
 
-	log.Printf("[MediaService] Attempt 1 failed for %s: %v. Retrying without cookies...", rawURL, err1)
+	log.Printf("[MediaService] Standard Deno attempt failed for %s: %v. Retrying with cookies...", rawURL, err1)
 
-	// Attempt 2: Without cookies (in case cookies are expired/invalid) & client=android,ios
-	res2, err2 := runYtDlp(false, "android,ios")
-	if err2 == nil && !strings.Contains(res2, "media output file not found") {
-		return res2, nil
+	// Attempt 2: With cookies (if available, for age-gated videos)
+	if foundCookiePath != "" {
+		res2, err2 := runYtDlp(true, "")
+		if err2 == nil && !strings.HasPrefix(res2, "media output file not found") {
+			return res2, nil
+		}
+		log.Printf("[MediaService] Cookie attempt failed for %s: %v", rawURL, err2)
 	}
 
-	// Attempt 3: Default yt-dlp extractors without cookies
-	res3, err3 := runYtDlp(false, "")
-	if err3 == nil && !strings.Contains(res3, "media output file not found") {
+	// Attempt 3: Web Embedded & VisionOS fallback client
+	res3, err3 := runYtDlp(false, "web_embedded,visionos")
+	if err3 == nil && !strings.HasPrefix(res3, "media output file not found") {
 		return res3, nil
 	}
 
