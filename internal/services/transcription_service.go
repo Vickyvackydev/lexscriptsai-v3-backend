@@ -200,12 +200,17 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 			if status == "" {
 				status = strings.ToLower(res.Status)
 			}
+			msg := strings.ToLower(res.Message)
 
 			if status == "completed" || (res.Success && len(res.Data.Result.Segments) > 0) {
 				speakerBanks, duration, wordCount := s.whisperService.MapSegmentsToSpeakerBanks(res.Data.Result.Segments)
 				s.handleSuccess(&job, speakerBanks, duration, wordCount)
 				return
-			} else if status == "failed" || !res.Success || strings.Contains(strings.ToLower(res.Message), "failed") {
+			} else if status == "processing" || status == "queued" || strings.Contains(msg, "in progress") || strings.Contains(msg, "processing") || strings.Contains(msg, "queued") {
+				// Whisper API is still actively processing the job — continue polling!
+				log.Printf("[Worker] Whisper job %s (%s) still processing: %s", job.ID, externalID, res.Message)
+				continue
+			} else if status == "failed" || strings.Contains(msg, "failed") || strings.Contains(msg, "error") {
 				errMsg := res.Message
 				if errMsg == "" {
 					errMsg = "Whisper transcription failed"
