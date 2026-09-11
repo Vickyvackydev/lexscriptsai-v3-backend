@@ -16,16 +16,29 @@ import (
 )
 
 type WhisperService struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	primaryURL    string
+	primaryToken  string
+	fallbackURL   string
+	fallbackToken string
+	client        *http.Client
 }
 
 func NewWhisperService(cfg *config.Config) *WhisperService {
+	pURL := cfg.WhisperPrimaryAPIURL
+	if pURL == "" {
+		pURL = cfg.WhisperAPIURL
+	}
+	pToken := cfg.WhisperPrimaryToken
+	if pToken == "" {
+		pToken = cfg.WhisperBaseToken
+	}
+
 	return &WhisperService{
-		baseURL: cfg.WhisperAPIURL,
-		token:   cfg.WhisperBaseToken,
-		client:  &http.Client{Timeout: 60 * time.Second},
+		primaryURL:    pURL,
+		primaryToken:  pToken,
+		fallbackURL:   cfg.WhisperFallbackAPIURL,
+		fallbackToken: cfg.WhisperFallbackToken,
+		client:        &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -66,8 +79,38 @@ type whisperWord struct {
 }
 
 func (w *WhisperService) Submit(audioURL string, diarize bool, language string) (string, error) {
-	if w.baseURL == "" {
-		return "", fmt.Errorf("WHISPER_API_URL is not configured")
+	if w.primaryURL == "" && w.fallbackURL == "" {
+		return "", fmt.Errorf("no Whisper API URL is configured")
+	}
+
+	// 1. Try Primary Whisper Service first
+	if w.primaryURL != "" {
+		log.Printf("[Whisper] Attempting job submission to Primary Whisper Service (%s)...", w.primaryURL)
+		jobID, err := w.submitToEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, audioURL, diarize, language)
+		if err == nil {
+			log.Printf("[Whisper] Successfully submitted job to Primary Whisper Service: %s", jobID)
+			return "primary::" + jobID, nil
+		}
+		log.Printf("[Whisper] Primary Whisper Service submission failed (%v). Switching to Fallback Whisper Service...", err)
+	}
+
+	// 2. Fallback to Secondary Whisper Service
+	if w.fallbackURL != "" {
+		log.Printf("[Whisper] Attempting job submission to Fallback Whisper Service (%s)...", w.fallbackURL)
+		jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language)
+		if err == nil {
+			log.Printf("[Whisper] Successfully submitted job to Fallback Whisper Service: %s", jobID)
+			return "fallback::" + jobID, nil
+		}
+		return "", fmt.Errorf("both Primary and Fallback Whisper services failed. Fallback error: %w", err)
+	}
+
+	return "", fmt.Errorf("whisper service unavailable")
+}
+
+func (w *WhisperService) submitToEndpoint(serviceName, baseURL, token, audioURL string, diarize bool, language string) (string, error) {
+	if baseURL == "" {
+		return "", fmt.Errorf("%s URL is not configured", serviceName)
 	}
 
 	lang := language
@@ -88,34 +131,34 @@ func (w *WhisperService) Submit(audioURL string, diarize bool, language string) 
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", w.baseURL+"/api/v1/transcribe", bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequest("POST", baseURL+"/api/v1/transcribe", bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return "", err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if w.token != "" {
-		req.Header.Set("Authorization", "Bearer "+w.token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("whisper request failed: %w", err)
+		return "", fmt.Errorf("%s request failed: %w", serviceName, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("whisper API error status: %d", resp.StatusCode)
+		return "", fmt.Errorf("%s error status: %d", serviceName, resp.StatusCode)
 	}
 
 	var parsed whisperResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("failed to decode whisper response: %w", err)
+		return "", fmt.Errorf("%s decode error: %w", serviceName, err)
 	}
 
 	jobID := parsed.Data.TranscriptionID
 	if jobID == "" {
-		return "", fmt.Errorf("whisper API returned empty transcription ID (msg: %s)", parsed.Message)
+		return "", fmt.Errorf("%s returned empty transcription ID (msg: %s)", serviceName, parsed.Message)
 	}
 
 	return jobID, nil
@@ -126,13 +169,49 @@ func (w *WhisperService) GetResult(externalID string) (*whisperResponse, error) 
 		return nil, fmt.Errorf("external ID cannot be empty")
 	}
 
-	req, err := http.NewRequest("GET", w.baseURL+"/api/v1/transcribe/"+externalID+"/result", nil)
+	if strings.HasPrefix(externalID, "primary::") {
+		realID := strings.TrimPrefix(externalID, "primary::")
+		res, err := w.getResultFromEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, realID)
+		if err == nil {
+			return res, nil
+		}
+		log.Printf("[Whisper] GetResult from Primary Service failed (%v). Querying Fallback Service...", err)
+		if w.fallbackURL != "" {
+			return w.getResultFromEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, realID)
+		}
+		return nil, err
+	}
+
+	if strings.HasPrefix(externalID, "fallback::") {
+		realID := strings.TrimPrefix(externalID, "fallback::")
+		return w.getResultFromEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, realID)
+	}
+
+	// Legacy externalID without prefix
+	res, err := w.getResultFromEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, externalID)
+	if err == nil {
+		return res, nil
+	}
+	if w.fallbackURL != "" {
+		log.Printf("[Whisper] Legacy GetResult from Primary failed (%v), trying Fallback Service...", err)
+		return w.getResultFromEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, externalID)
+	}
+
+	return nil, err
+}
+
+func (w *WhisperService) getResultFromEndpoint(serviceName, baseURL, token, externalID string) (*whisperResponse, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("%s URL is not configured", serviceName)
+	}
+
+	req, err := http.NewRequest("GET", baseURL+"/api/v1/transcribe/"+externalID+"/result", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if w.token != "" {
-		req.Header.Set("Authorization", "Bearer "+w.token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := w.client.Do(req)
@@ -151,7 +230,7 @@ func (w *WhisperService) GetResult(externalID string) (*whisperResponse, error) 
 		if err := json.Unmarshal(bodyBytes, &parsed); err == nil && parsed.Message != "" {
 			return &parsed, nil
 		}
-		return nil, fmt.Errorf("whisper API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("%s returned status %d: %s", serviceName, resp.StatusCode, string(bodyBytes))
 	}
 
 	var parsed whisperResponse

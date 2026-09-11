@@ -17,6 +17,10 @@ type Config struct {
 	JWTSecret              string
 	JWTAccessExpiryMinutes int
 	JWTRefreshExpiryDays   int
+	WhisperPrimaryAPIURL   string
+	WhisperPrimaryToken    string
+	WhisperFallbackAPIURL  string
+	WhisperFallbackToken   string
 	WhisperAPIURL          string
 	WhisperBaseToken       string
 	GCSBucketName          string
@@ -33,23 +37,32 @@ func Load() *Config {
 		log.Println("[Config] .env file not found or could not be loaded, using environment variables")
 	}
 
+	primaryURL := getEnv("WHISPER_PRIMARY_API_URL", getEnv("WHISPER_API_URL", ""))
+	primaryToken := getEnv("WHISPER_PRIMARY_BASE_TOKEN", getEnv("WHISPER_BASE_TOKEN", ""))
+	fallbackURL := getEnv("WHISPER_FALLBACK_API_URL", "")
+	fallbackToken := getEnv("WHISPER_FALLBACK_BASE_TOKEN", "")
+
 	return &Config{
 		Port:                   getEnv("PORT", "8080"),
 		BaseURL:                getEnv("BASE_URL", "http://localhost:8080"),
 		Env:                    getEnv("ENV", "development"),
 		FrontendURL:            getEnv("FRONTEND_URL", "http://localhost:5173"),
-		DatabaseURL:            getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/lexscriptsai_v3?sslmode=disable"),
-		JWTSecret:              getEnv("JWT_SECRET", "lexscriptsai-v3-super-secret-production-grade-jwt-key-2026"),
+		DatabaseURL:            getEnv("DATABASE_URL", ""),
+		JWTSecret:              getEnv("JWT_SECRET", ""),
 		JWTAccessExpiryMinutes: getEnvAsInt("JWT_ACCESS_EXPIRY_MINUTES", 15),
 		JWTRefreshExpiryDays:   getEnvAsInt("JWT_REFRESH_EXPIRY_DAYS", 7),
-		WhisperAPIURL:          getEnv("WHISPER_API_URL", "http://194.93.48.51:8070"),
-		WhisperBaseToken:       getEnv("WHISPER_BASE_TOKEN", "RlU7oyEnR9yuqGLBWdLk1vkwSx3U7d_bMlQPh3YIJjs"),
-		GCSBucketName:          getEnv("GCS_BUCKET_NAME", "exscripts-ai-media"),
-		GoogleAppCredentials:   getEnv("GOOGLE_APPLICATION_CREDENTIALS", "service-account.json"),
+		WhisperPrimaryAPIURL:   primaryURL,
+		WhisperPrimaryToken:    primaryToken,
+		WhisperFallbackAPIURL:  fallbackURL,
+		WhisperFallbackToken:   fallbackToken,
+		WhisperAPIURL:          primaryURL,
+		WhisperBaseToken:       primaryToken,
+		GCSBucketName:          getEnv("GCS_BUCKET_NAME", ""),
+		GoogleAppCredentials:   getEnv("GOOGLE_APPLICATION_CREDENTIALS", ""),
 		AdminDefaultEmail:      getEnv("ADMIN_DEFAULT_EMAIL", "admin@lexscriptsai.com"),
-		AdminDefaultPassword:   getEnv("ADMIN_DEFAULT_PASSWORD", "AdminPassword2026!#"),
+		AdminDefaultPassword:   getEnv("ADMIN_DEFAULT_PASSWORD", ""),
 		BrevoAPIKey:            getEnv("BREVO_API_KEY", ""),
-		BrevoSenderEmail:       getEnv("BREVO_SENDER_EMAIL", "noreply@lexscriptsai.com"),
+		BrevoSenderEmail:       getEnv("BREVO_SENDER_EMAIL", ""),
 		BrevoSenderName:        getEnv("BREVO_SENDER_NAME", "LexScriptsAI"),
 	}
 }
