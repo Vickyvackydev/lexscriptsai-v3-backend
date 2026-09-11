@@ -167,6 +167,10 @@ func main() {
 		adminGroup.DELETE("/locations/:id", locationHandler.DeleteLocation)
 		adminGroup.GET("/search", searchHandler.AdminSearch)
 		adminGroup.POST("/cookies", adminHandler.UpdateCookies)
+		adminGroup.GET("/recycle-bin", recycleBinHandler.ListAdminRecycleBin)
+		adminGroup.POST("/recycle-bin/:id/restore", recycleBinHandler.AdminRestore)
+		adminGroup.DELETE("/recycle-bin/:id", recycleBinHandler.AdminPermanentDelete)
+		adminGroup.DELETE("/recycle-bin/:id/permanent", recycleBinHandler.AdminPermanentDelete)
 	}
 
 	// Account Owner Protected Endpoints

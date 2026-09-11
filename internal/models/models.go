@@ -162,6 +162,9 @@ type Word struct {
 	EndTime    float64 `json:"endTime"`
 	Confidence float64 `json:"confidence"`
 	Tag        string  `json:"tag,omitempty"`
+	Edited     bool    `json:"edited,omitempty"`
+	EditedBy   string  `json:"editedBy,omitempty"`
+	EditColor  string  `json:"editColor,omitempty"`
 }
 
 type SpeakerBank struct {
@@ -221,6 +224,7 @@ type Transcript struct {
 	Flags         Float64Slice     `gorm:"type:jsonb" json:"flags,omitempty"`
 	Source        string           `gorm:"size:50;default:'upload';index" json:"source,omitempty"`
 	IsTrashed     bool             `gorm:"default:false;index" json:"isTrashed"`
+	AdminTrashed  bool             `gorm:"default:false;index" json:"adminTrashed"`
 	DeletedByID   *uuid.UUID       `gorm:"type:uuid" json:"deletedById,omitempty"`
 	DeletedByName string           `gorm:"size:200" json:"deletedByName,omitempty"`
 	ExpiresAt     *time.Time       `json:"expiresAt,omitempty"`

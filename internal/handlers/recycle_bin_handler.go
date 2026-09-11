@@ -59,5 +59,45 @@ func (h *RecycleBinHandler) PermanentDelete(c echo.Context) error {
 		return response.Error(c, http.StatusInternalServerError, "PURGE_FAILED", err.Error(), nil)
 	}
 
-	return response.Success(c, http.StatusOK, map[string]string{"message": "Transcript permanently purged"})
+	return response.Success(c, http.StatusOK, map[string]string{"message": "Transcript moved to admin recycle bin"})
+}
+
+func (h *RecycleBinHandler) ListAdminRecycleBin(c echo.Context) error {
+	items, err := h.recycleBinService.ListAdminRecycleBin()
+	if err != nil {
+		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error(), nil)
+	}
+	return response.Success(c, http.StatusOK, items)
+}
+
+func (h *RecycleBinHandler) AdminRestore(c echo.Context) error {
+	actor := middleware.GetCurrentUser(c)
+
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_UUID", "Invalid transcript ID", nil)
+	}
+
+	if err := h.recycleBinService.AdminRestore(id, actor); err != nil {
+		return response.Error(c, http.StatusBadRequest, "RESTORE_FAILED", err.Error(), nil)
+	}
+
+	return response.Success(c, http.StatusOK, map[string]string{"message": "Transcript restored to owner successfully"})
+}
+
+func (h *RecycleBinHandler) AdminPermanentDelete(c echo.Context) error {
+	actor := middleware.GetCurrentUser(c)
+
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "INVALID_UUID", "Invalid transcript ID", nil)
+	}
+
+	if err := h.recycleBinService.AdminPermanentDelete(id, actor); err != nil {
+		return response.Error(c, http.StatusInternalServerError, "PURGE_FAILED", err.Error(), nil)
+	}
+
+	return response.Success(c, http.StatusOK, map[string]string{"message": "Transcript permanently purged by administrator"})
 }
