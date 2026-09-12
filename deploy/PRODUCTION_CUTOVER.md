@@ -1,3 +1,57 @@
+# LexScriptsAI V3 — Production Cutover & Deployment Guide
+
+This guide contains the exact steps and commands to transition `lexscriptsai.com` from Version 2 to Version 3 on your DigitalOcean droplet (`137.184.69.56`).
+
+---
+
+## Prerequisites (Before Cutover)
+
+1. Ensure the **V3 Production Backend** is running on port `8080`:
+   ```bash
+   sudo systemctl status lexscripts-backend-prod
+   ```
+   *(If not running, start it: `sudo systemctl start lexscripts-backend-prod && sudo systemctl enable lexscripts-backend-prod`)*
+
+2. Ensure the **V3 Production Frontend** files are built and deployed to `/var/www/lexscriptsai.com`:
+   ```bash
+   ls -la /var/www/lexscriptsai.com
+   ```
+
+---
+
+## Step 1: Update DNS Records
+
+In your DNS provider (e.g., Cloudflare, Namecheap, GoDaddy):
+- Update the **A record** for `lexscriptsai.com` to point to:
+  ```text
+  137.184.69.56
+  ```
+- Update the **A record** for `www.lexscriptsai.com` to point to:
+  ```text
+  137.184.69.56
+  ```
+> **Note for Cloudflare users**: When initially obtaining the Let's Encrypt SSL certificate via Certbot, set the proxy status to **DNS Only** (grey cloud), or use HTTP verification.
+
+---
+
+## Step 2: Issue SSL Certificate for Production Domain
+
+SSH into your Droplet and run Certbot:
+
+```bash
+sudo certbot --nginx -d lexscriptsai.com -d www.lexscriptsai.com
+```
+
+Certbot will automatically verify the domain, generate certificates under `/etc/letsencrypt/live/lexscriptsai.com/`, and configure SSL renewal.
+
+---
+
+## Step 3: Install the 2GB Production Nginx Configuration
+
+Run this command on your droplet to write the optimized production Nginx site configuration (with 2GB upload support, direct body streaming, and 30-minute upload timeouts):
+
+```bash
+sudo tee /etc/nginx/sites-available/lexscriptsai.com.conf > /dev/null << 'EOF'
 # Nginx configuration for lexscriptsai.com (Production)
 
 # HTTP - Redirect to HTTPS
@@ -24,6 +78,7 @@ server {
     root /var/www/lexscriptsai.com;
     index index.html;
 
+    # Allow up to 2GB files
     client_max_body_size 2048M;
 
     # Gzip compression
@@ -75,3 +130,28 @@ server {
         proxy_send_timeout 86400s;
     }
 }
+EOF
+```
+
+---
+
+## Step 4: Enable Production Site and Reload Nginx
+
+Activate the site by linking it into `sites-enabled`, verify syntax, and reload:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/lexscriptsai.com.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
+## Step 5: Verification Checklist
+
+1. Visit `https://lexscriptsai.com` in your browser.
+2. Confirm the SSL certificate is valid and shows the secure padlock.
+3. Test uploading a large audio/video file (>10MB and up to 2GB) to verify end-to-end upload streaming.
+4. Check backend production service logs for clean requests:
+   ```bash
+   sudo journalctl -u lexscripts-backend-prod -f
+   ```

@@ -64,7 +64,7 @@ func NewStorageService(cfg *config.Config, db *gorm.DB) (*StorageService, error)
 }
 
 const (
-	MaxAudioSizeBytes = 500 * 1024 * 1024
+	MaxAudioSizeBytes = int64(2) * 1024 * 1024 * 1024 // 2GB
 )
 
 var allowedAudioMIMEs = map[string]bool{
@@ -90,7 +90,7 @@ type SignedUploadURLResponse struct {
 
 func (s *StorageService) GenerateUploadSignedURL(accountID uuid.UUID, ownerID uuid.UUID, filename string, contentType string, sizeBytes int64) (*SignedUploadURLResponse, error) {
 	if sizeBytes > MaxAudioSizeBytes {
-		return nil, fmt.Errorf("file exceeds maximum allowed size of 500MB (requested: %d bytes)", sizeBytes)
+		return nil, fmt.Errorf("file exceeds maximum allowed size of 2GB (requested: %d bytes)", sizeBytes)
 	}
 
 	cTypeClean := strings.ToLower(strings.TrimSpace(contentType))
@@ -195,7 +195,7 @@ func (s *StorageService) GenerateDownloadSignedURLByKey(objectKey string, durati
 
 func (s *StorageService) UploadMultipart(ctx context.Context, fileHeader *multipart.FileHeader, accountID uuid.UUID, ownerID uuid.UUID) (*models.File, string, error) {
 	if fileHeader.Size > MaxAudioSizeBytes {
-		return nil, "", fmt.Errorf("file exceeds maximum size limit of 500MB")
+		return nil, "", fmt.Errorf("file exceeds maximum size limit of 2GB")
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
