@@ -268,7 +268,7 @@ func (h *CollabHandler) SearchCollaborators(c echo.Context) error {
 	}
 
 	var users []models.User
-	if err := dbQuery.Limit(15).Find(&users).Error; err != nil {
+	if err := dbQuery.Limit(10).Find(&users).Error; err != nil {
 		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error(), nil)
 	}
 
