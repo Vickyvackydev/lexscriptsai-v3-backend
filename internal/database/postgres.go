@@ -78,6 +78,7 @@ func Connect(cfg *config.Config) (*DB, error) {
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_download BOOLEAN DEFAULT TRUE;")
 	db.Exec("ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS flags JSONB;")
 	db.Exec("ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'upload';")
+	db.Exec("ALTER TABLE cause_list_items ADD COLUMN IF NOT EXISTS owner_id UUID;")
 
 	log.Println("[Database] Schema migrations completed successfully")
 

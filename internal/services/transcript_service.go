@@ -78,6 +78,33 @@ func (s *TranscriptService) ListTranscripts(accountID uuid.UUID, filter ListTran
 		return nil, 0, err
 	}
 
+	ownerIDs := make([]uuid.UUID, 0, len(transcripts))
+	for _, t := range transcripts {
+		if t.OwnerID != uuid.Nil {
+			ownerIDs = append(ownerIDs, t.OwnerID)
+		}
+	}
+	if len(ownerIDs) > 0 {
+		var users []models.User
+		s.db.Select("id, name, first_name, last_name, email").Where("id IN ?", ownerIDs).Find(&users)
+		userMap := make(map[uuid.UUID]string)
+		for _, u := range users {
+			n := strings.TrimSpace(u.Name)
+			if n == "" {
+				n = strings.TrimSpace(u.FirstName + " " + u.LastName)
+			}
+			if n == "" {
+				n = u.Email
+			}
+			userMap[u.ID] = n
+		}
+		for i := range transcripts {
+			if name, ok := userMap[transcripts[i].OwnerID]; ok && name != "" {
+				transcripts[i].OwnerName = name
+			}
+		}
+	}
+
 	return transcripts, total, nil
 }
 
@@ -85,6 +112,19 @@ func (s *TranscriptService) GetTranscript(accountID uuid.UUID, id uuid.UUID) (*m
 	var transcript models.Transcript
 	if err := s.db.Where("id = ? AND account_id = ? AND is_trashed = false", id, accountID).First(&transcript).Error; err != nil {
 		return nil, err
+	}
+	if transcript.OwnerID != uuid.Nil {
+		var u models.User
+		if err := s.db.Select("id, name, first_name, last_name, email").Where("id = ?", transcript.OwnerID).First(&u).Error; err == nil {
+			n := strings.TrimSpace(u.Name)
+			if n == "" {
+				n = strings.TrimSpace(u.FirstName + " " + u.LastName)
+			}
+			if n == "" {
+				n = u.Email
+			}
+			transcript.OwnerName = n
+		}
 	}
 	s.SignAudioURL(&transcript)
 	return &transcript, nil
@@ -177,9 +217,15 @@ func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.U
 		source = "upload"
 	}
 
+	ownerName := ""
+	if actor != nil {
+		ownerName = actor.Name
+	}
+
 	transcript := models.Transcript{
 		AccountID:    accountID,
 		OwnerID:      ownerID,
+		OwnerName:    ownerName,
 		FolderID:     input.FolderID,
 		MatterID:     input.MatterID,
 		AudioFileID:  input.AudioFileID,

@@ -46,8 +46,33 @@ func (s *FolderService) ListFolders(accountID uuid.UUID, search string) ([]model
 		countMap[c.FolderID] = c.Count
 	}
 
+	ownerIDs := make([]uuid.UUID, 0, len(folders))
+	for _, f := range folders {
+		if f.OwnerID != uuid.Nil {
+			ownerIDs = append(ownerIDs, f.OwnerID)
+		}
+	}
+	userMap := make(map[uuid.UUID]string)
+	if len(ownerIDs) > 0 {
+		var users []models.User
+		s.db.Select("id, name, first_name, last_name, email").Where("id IN ?", ownerIDs).Find(&users)
+		for _, u := range users {
+			n := strings.TrimSpace(u.Name)
+			if n == "" {
+				n = strings.TrimSpace(u.FirstName + " " + u.LastName)
+			}
+			if n == "" {
+				n = u.Email
+			}
+			userMap[u.ID] = n
+		}
+	}
+
 	for i := range folders {
 		folders[i].TranscriptCount = countMap[folders[i].ID]
+		if name, ok := userMap[folders[i].OwnerID]; ok && name != "" {
+			folders[i].OwnerName = name
+		}
 	}
 
 	return folders, nil
@@ -59,9 +84,15 @@ func (s *FolderService) CreateFolder(accountID uuid.UUID, ownerID uuid.UUID, nam
 		return nil, errors.New("folder name cannot be empty")
 	}
 
+	ownerName := ""
+	if actor != nil {
+		ownerName = actor.Name
+	}
+
 	folder := models.Folder{
 		AccountID:       accountID,
 		OwnerID:         ownerID,
+		OwnerName:       ownerName,
 		Name:            trimmed,
 		TranscriptCount: 0,
 		IsTrashed:       false,

@@ -197,6 +197,7 @@ func main() {
 	authenticated.GET("/transcripts/:id/audio", transcriptHandler.DownloadAudio, appMiddleware.RequirePermission(db.DB, "view"))
 
 	// Transcript AI & Collaboration Endpoints
+	authenticated.GET("/collaborators/search", collabHandler.SearchCollaborators)
 	authenticated.POST("/transcripts/:id/translate", collabHandler.TranslateTranscript, appMiddleware.RequirePermission(db.DB, "view"))
 	authenticated.POST("/transcripts/:id/summary", collabHandler.GenerateSummary, appMiddleware.RequirePermission(db.DB, "view"))
 	authenticated.POST("/transcripts/:id/share", collabHandler.ShareTranscript, appMiddleware.RequirePermission(db.DB, "edit"))

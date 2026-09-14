@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"html"
 	"net/http"
 	"strings"
@@ -231,4 +232,92 @@ func (h *CollabHandler) GenerateSummary(c echo.Context) error {
 	}
 
 	return response.Success(c, http.StatusOK, summary)
+}
+
+type CollaboratorSearchResult struct {
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Email           string    `json:"email"`
+	Role            string    `json:"role"`
+	SystemRole      string    `json:"systemRole"`
+	AvatarInitials  string    `json:"avatarInitials"`
+	IsAccountMember bool      `json:"isAccountMember"`
+}
+
+func (h *CollabHandler) SearchCollaborators(c echo.Context) error {
+	currentUserID := middleware.GetUserID(c)
+	accountID := middleware.GetAccountID(c)
+	query := strings.TrimSpace(c.QueryParam("q"))
+
+	dbQuery := h.db.Model(&models.User{}).Where("status = ?", "active")
+	if currentUserID != uuid.Nil {
+		dbQuery = dbQuery.Where("id != ?", currentUserID)
+	}
+
+	if query != "" {
+		likeTerm := "%" + strings.ToLower(query) + "%"
+		dbQuery = dbQuery.Where("(LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ?)",
+			likeTerm, likeTerm, likeTerm, likeTerm)
+	}
+
+	// Prioritize colleagues under the same account if user belongs to an account
+	if accountID != uuid.Nil {
+		dbQuery = dbQuery.Order(fmt.Sprintf("CASE WHEN account_id = '%s' THEN 0 ELSE 1 END, name ASC", accountID.String()))
+	} else {
+		dbQuery = dbQuery.Order("name ASC")
+	}
+
+	var users []models.User
+	if err := dbQuery.Limit(15).Find(&users).Error; err != nil {
+		return response.Error(c, http.StatusInternalServerError, "DB_ERROR", err.Error(), nil)
+	}
+
+	results := make([]CollaboratorSearchResult, 0, len(users))
+	for _, u := range users {
+		roleStr := string(u.ProfessionalRole)
+		if roleStr == "" {
+			if u.SystemRole == models.RoleOwner {
+				roleStr = "Account Owner"
+			} else if u.SystemRole == models.RoleAdmin {
+				roleStr = "Administrator"
+			} else {
+				roleStr = "Member"
+			}
+		}
+
+		isAccountMember := false
+		if u.AccountID != nil && accountID != uuid.Nil && *u.AccountID == accountID {
+			isAccountMember = true
+		}
+
+		displayName := strings.TrimSpace(u.Name)
+		if displayName == "" {
+			displayName = strings.TrimSpace(u.FirstName + " " + u.LastName)
+		}
+		if displayName == "" {
+			displayName = u.Email
+		}
+
+		initials := u.AvatarInitials
+		if initials == "" && len(displayName) > 0 {
+			parts := strings.Fields(displayName)
+			if len(parts) >= 2 {
+				initials = strings.ToUpper(string(parts[0][0]) + string(parts[1][0]))
+			} else {
+				initials = strings.ToUpper(string(displayName[0]))
+			}
+		}
+
+		results = append(results, CollaboratorSearchResult{
+			ID:              u.ID,
+			Name:            displayName,
+			Email:           u.Email,
+			Role:            roleStr,
+			SystemRole:      string(u.SystemRole),
+			AvatarInitials:  initials,
+			IsAccountMember: isAccountMember,
+		})
+	}
+
+	return response.Success(c, http.StatusOK, results)
 }

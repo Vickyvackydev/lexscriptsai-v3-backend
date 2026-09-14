@@ -211,6 +211,7 @@ type Transcript struct {
 	BaseUUIDModel
 	AccountID     uuid.UUID        `gorm:"type:uuid;index;not null" json:"accountId"`
 	OwnerID       uuid.UUID        `gorm:"type:uuid;index;not null" json:"ownerId"`
+	OwnerName     string           `gorm:"-" json:"ownerName,omitempty"`
 	FolderID      *uuid.UUID       `gorm:"type:uuid;index" json:"folderId,omitempty"`
 	MatterID      *uuid.UUID       `gorm:"type:uuid;index" json:"matterId,omitempty"`
 	AudioFileID   *uuid.UUID       `gorm:"type:uuid;index" json:"audioFileId,omitempty"`
@@ -258,6 +259,7 @@ type Folder struct {
 	BaseUUIDModel
 	AccountID       uuid.UUID `gorm:"type:uuid;index;not null" json:"accountId"`
 	OwnerID         uuid.UUID `gorm:"type:uuid;index;not null" json:"ownerId"`
+	OwnerName       string    `gorm:"-" json:"ownerName,omitempty"`
 	Name            string    `gorm:"size:200;not null" json:"name"`
 	TranscriptCount int       `gorm:"default:0" json:"transcriptCount"`
 	IsTrashed       bool      `gorm:"default:false;index" json:"isTrashed"`
@@ -286,6 +288,7 @@ type CauseList struct {
 	BaseUUIDModel
 	AccountID   uuid.UUID       `gorm:"type:uuid;index;not null" json:"accountId"`
 	OwnerID     uuid.UUID       `gorm:"type:uuid;index;not null" json:"ownerId"`
+	OwnerName   string          `gorm:"-" json:"ownerName,omitempty"`
 	Name        string          `gorm:"size:200;not null" json:"name"`
 	FolderID    *uuid.UUID      `gorm:"type:uuid;index" json:"folderId,omitempty"`
 	FolderName  string          `gorm:"size:200" json:"folderName,omitempty"`
@@ -296,6 +299,8 @@ type CauseList struct {
 type CauseListItem struct {
 	BaseUUIDModel
 	AccountID       uuid.UUID    `gorm:"type:uuid;index;not null" json:"accountId"`
+	OwnerID         *uuid.UUID   `gorm:"type:uuid;index" json:"ownerId,omitempty"`
+	OwnerName       string       `gorm:"-" json:"ownerName,omitempty"`
 	CauseListID     *uuid.UUID   `gorm:"type:uuid;index" json:"causeListId,omitempty"`
 	CauseListName   string       `gorm:"size:200" json:"causeListName,omitempty"`
 	Date            string       `gorm:"size:20;index;not null" json:"date"`

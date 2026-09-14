@@ -30,6 +30,34 @@ func (s *CauseListService) ListCauseLists(accountID uuid.UUID, search string) ([
 	if err := query.Order("created_at DESC").Find(&lists).Error; err != nil {
 		return nil, err
 	}
+
+	ownerIDs := make([]uuid.UUID, 0, len(lists))
+	for _, l := range lists {
+		if l.OwnerID != uuid.Nil {
+			ownerIDs = append(ownerIDs, l.OwnerID)
+		}
+	}
+	if len(ownerIDs) > 0 {
+		var users []models.User
+		s.db.Select("id, name, first_name, last_name, email").Where("id IN ?", ownerIDs).Find(&users)
+		userMap := make(map[uuid.UUID]string)
+		for _, u := range users {
+			n := strings.TrimSpace(u.Name)
+			if n == "" {
+				n = strings.TrimSpace(u.FirstName + " " + u.LastName)
+			}
+			if n == "" {
+				n = u.Email
+			}
+			userMap[u.ID] = n
+		}
+		for i := range lists {
+			if name, ok := userMap[lists[i].OwnerID]; ok && name != "" {
+				lists[i].OwnerName = name
+			}
+		}
+	}
+
 	return lists, nil
 }
 
@@ -47,9 +75,15 @@ func (s *CauseListService) CreateCauseList(accountID uuid.UUID, ownerID uuid.UUI
 		}
 	}
 
+	ownerName := ""
+	if actor != nil {
+		ownerName = actor.Name
+	}
+
 	list := models.CauseList{
 		AccountID:  accountID,
 		OwnerID:    ownerID,
+		OwnerName:  ownerName,
 		Name:       trimmed,
 		FolderID:   folderID,
 		FolderName: folderName,
@@ -84,6 +118,36 @@ func (s *CauseListService) ListMatters(accountID uuid.UUID, date string, folderI
 	if err := query.Order("date ASC, time ASC").Find(&items).Error; err != nil {
 		return nil, err
 	}
+
+	ownerIDs := make([]uuid.UUID, 0, len(items))
+	for _, it := range items {
+		if it.OwnerID != nil && *it.OwnerID != uuid.Nil {
+			ownerIDs = append(ownerIDs, *it.OwnerID)
+		}
+	}
+	if len(ownerIDs) > 0 {
+		var users []models.User
+		s.db.Select("id, name, first_name, last_name, email").Where("id IN ?", ownerIDs).Find(&users)
+		userMap := make(map[uuid.UUID]string)
+		for _, u := range users {
+			n := strings.TrimSpace(u.Name)
+			if n == "" {
+				n = strings.TrimSpace(u.FirstName + " " + u.LastName)
+			}
+			if n == "" {
+				n = u.Email
+			}
+			userMap[u.ID] = n
+		}
+		for i := range items {
+			if items[i].OwnerID != nil {
+				if name, ok := userMap[*items[i].OwnerID]; ok && name != "" {
+					items[i].OwnerName = name
+				}
+			}
+		}
+	}
+
 	return items, nil
 }
 
@@ -138,8 +202,17 @@ func (s *CauseListService) CreateMatter(accountID uuid.UUID, input CreateMatterI
 		}
 	}
 
+	var actorID *uuid.UUID
+	actorName := ""
+	if actor != nil {
+		actorID = &actor.ID
+		actorName = actor.Name
+	}
+
 	matter := models.CauseListItem{
 		AccountID:     accountID,
+		OwnerID:       actorID,
+		OwnerName:     actorName,
 		CauseListID:   causeListID,
 		CauseListName: causeListName,
 		Date:          input.Date,
