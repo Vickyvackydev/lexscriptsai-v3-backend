@@ -178,6 +178,7 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 	timeout := time.After(30 * time.Minute)
 
 	consecutiveErrors := 0
+	queuedTicks := 0
 	for {
 		select {
 		case <-timeout:
@@ -202,6 +203,27 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 			}
 			msg := strings.ToLower(res.Message)
 
+			// If job on Primary remains stuck in 'queued' for >15s (GPU offline), automatically failover to Fallback!
+			if status == "queued" {
+				queuedTicks++
+				if strings.HasPrefix(externalID, "primary::") && queuedTicks >= 5 && s.whisperService.HasFallback() {
+					log.Printf("[Worker] Job %s has been queued on Primary for %ds without GPU processing. Failing over to Fallback Whisper Service...", job.ID, queuedTicks*3)
+					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language)
+					if failoverErr == nil {
+						log.Printf("[Worker] Successfully failed over job %s to Fallback Whisper Service: %s", job.ID, newID)
+						externalID = newID
+						job.ExternalID = newID
+						s.db.Model(&job).Update("external_id", newID)
+						queuedTicks = 0
+						continue
+					} else {
+						log.Printf("[Worker] Failover to Fallback Whisper Service failed: %v", failoverErr)
+					}
+				}
+			} else {
+				queuedTicks = 0
+			}
+
 			if status == "completed" || (res.Success && len(res.Data.Result.Segments) > 0) {
 				speakerBanks, duration, wordCount := s.whisperService.MapSegmentsToSpeakerBanks(res.Data.Result.Segments)
 				s.handleSuccess(&job, speakerBanks, duration, wordCount)
@@ -211,6 +233,19 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 				log.Printf("[Worker] Whisper job %s (%s) still processing: %s", job.ID, externalID, res.Message)
 				continue
 			} else if status == "failed" || strings.Contains(msg, "failed") || strings.Contains(msg, "error") {
+				// If primary failed, try fallback before giving up
+				if strings.HasPrefix(externalID, "primary::") && s.whisperService.HasFallback() {
+					log.Printf("[Worker] Primary failed for job %s (%s). Attempting failover to Fallback Whisper Service...", job.ID, res.Message)
+					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language)
+					if failoverErr == nil {
+						externalID = newID
+						job.ExternalID = newID
+						s.db.Model(&job).Update("external_id", newID)
+						queuedTicks = 0
+						continue
+					}
+				}
+
 				errMsg := res.Message
 				if errMsg == "" {
 					errMsg = "Whisper transcription failed"

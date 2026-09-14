@@ -78,20 +78,87 @@ type whisperWord struct {
 	End   float64 `json:"end"`
 }
 
+type primaryReadyResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		Ready              bool `json:"ready"`
+		ActiveWorkersCount int  `json:"active_workers_count"`
+	} `json:"data"`
+}
+
+func (w *WhisperService) isPrimaryReady() bool {
+	if w.primaryURL == "" {
+		return false
+	}
+
+	readyURL := strings.TrimRight(w.primaryURL, "/") + "/api/v1/ready"
+	req, err := http.NewRequest("GET", readyURL, nil)
+	if err != nil {
+		return false
+	}
+	if w.primaryToken != "" {
+		req.Header.Set("Authorization", "Bearer "+w.primaryToken)
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[Whisper] Primary readiness probe failed: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[Whisper] Primary readiness probe returned HTTP %d (GPU worker offline)", resp.StatusCode)
+		return false
+	}
+
+	var parsed primaryReadyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return false
+	}
+
+	if !parsed.Data.Ready || parsed.Data.ActiveWorkersCount == 0 {
+		log.Printf("[Whisper] Primary service has 0 active GPU workers (ready=%v, active_workers=%d)", parsed.Data.Ready, parsed.Data.ActiveWorkersCount)
+		return false
+	}
+
+	return true
+}
+
+func (w *WhisperService) HasFallback() bool {
+	return w.fallbackURL != ""
+}
+
+func (w *WhisperService) SubmitFallbackOnly(audioURL string, diarize bool, language string) (string, error) {
+	if w.fallbackURL == "" {
+		return "", fmt.Errorf("fallback Whisper service is not configured")
+	}
+	jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language)
+	if err != nil {
+		return "", err
+	}
+	return "fallback::" + jobID, nil
+}
+
 func (w *WhisperService) Submit(audioURL string, diarize bool, language string) (string, error) {
 	if w.primaryURL == "" && w.fallbackURL == "" {
 		return "", fmt.Errorf("no Whisper API URL is configured")
 	}
 
-	// 1. Try Primary Whisper Service first
+	// 1. Check if Primary Whisper Service has active GPU workers before submitting
 	if w.primaryURL != "" {
-		log.Printf("[Whisper] Attempting job submission to Primary Whisper Service (%s)...", w.primaryURL)
-		jobID, err := w.submitToEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, audioURL, diarize, language)
-		if err == nil {
-			log.Printf("[Whisper] Successfully submitted job to Primary Whisper Service: %s", jobID)
-			return "primary::" + jobID, nil
+		if w.isPrimaryReady() {
+			log.Printf("[Whisper] Primary GPU worker is active. Submitting to Primary Whisper Service (%s)...", w.primaryURL)
+			jobID, err := w.submitToEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, audioURL, diarize, language)
+			if err == nil {
+				log.Printf("[Whisper] Successfully submitted job to Primary Whisper Service: %s", jobID)
+				return "primary::" + jobID, nil
+			}
+			log.Printf("[Whisper] Primary Whisper Service submission failed (%v). Switching to Fallback Whisper Service...", err)
+		} else {
+			log.Printf("[Whisper] Primary Whisper Service has no active GPU workers. Immediately failing over to Fallback Whisper Service (%s)...", w.fallbackURL)
 		}
-		log.Printf("[Whisper] Primary Whisper Service submission failed (%v). Switching to Fallback Whisper Service...", err)
 	}
 
 	// 2. Fallback to Secondary Whisper Service
