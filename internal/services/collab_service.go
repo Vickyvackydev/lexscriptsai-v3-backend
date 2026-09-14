@@ -324,6 +324,10 @@ func (s *CollabService) ShareTranscript(transcriptID uuid.UUID, ownerID uuid.UUI
 		return nil, errors.New("you cannot share a transcript with yourself")
 	}
 
+	if targetUser.SystemRole == models.RoleAdmin || targetUser.SystemRole == "superadmin" {
+		return nil, errors.New("cannot add an administrator account as a collaborator")
+	}
+
 	// Check collaborator limit
 	var currentCount int64
 	s.db.Model(&models.TranscriptShare{}).Where("transcript_id = ?", transcriptID).Count(&currentCount)

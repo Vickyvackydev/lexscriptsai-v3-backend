@@ -249,7 +249,10 @@ func (h *CollabHandler) SearchCollaborators(c echo.Context) error {
 	accountID := middleware.GetAccountID(c)
 	query := strings.TrimSpace(c.QueryParam("q"))
 
-	dbQuery := h.db.Model(&models.User{}).Where("status = ?", "active")
+	// Filter out inactive users and system administrators
+	dbQuery := h.db.Model(&models.User{}).
+		Where("status = ?", "active").
+		Where("system_role != ? AND system_role != ?", models.RoleAdmin, "superadmin")
 	if currentUserID != uuid.Nil {
 		dbQuery = dbQuery.Where("id != ?", currentUserID)
 	}
