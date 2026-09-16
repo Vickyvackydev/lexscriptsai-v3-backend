@@ -220,16 +220,17 @@ type Transcript struct {
 	Status        TranscriptStatus `gorm:"size:50;default:'processing';not null" json:"status"`
 	Duration      int              `gorm:"default:0" json:"duration"`
 	WordCount     int              `gorm:"default:0" json:"wordCount"`
-	Language      string           `gorm:"size:50;default:'en'" json:"language"`
-	SpeakerBanks  SpeakerBanks     `gorm:"type:jsonb" json:"speakerBanks"`
-	Flags         Float64Slice     `gorm:"type:jsonb" json:"flags,omitempty"`
-	Source        string           `gorm:"size:50;default:'upload';index" json:"source,omitempty"`
-	IsTrashed     bool             `gorm:"default:false;index" json:"isTrashed"`
-	AdminTrashed  bool             `gorm:"default:false;index" json:"adminTrashed"`
-	DeletedByID   *uuid.UUID       `gorm:"type:uuid" json:"deletedById,omitempty"`
-	DeletedByName string           `gorm:"size:200" json:"deletedByName,omitempty"`
-	ExpiresAt     *time.Time       `json:"expiresAt,omitempty"`
-	UserRole      string           `gorm:"-" json:"userRole,omitempty"`
+	Language       string           `gorm:"size:50;default:'en'" json:"language"`
+	TargetLanguage string           `gorm:"size:50;default:'en'" json:"targetLanguage,omitempty"`
+	SpeakerBanks   SpeakerBanks     `gorm:"type:jsonb" json:"speakerBanks"`
+	Flags          Float64Slice     `gorm:"type:jsonb" json:"flags,omitempty"`
+	Source         string           `gorm:"size:50;default:'upload';index" json:"source,omitempty"`
+	IsTrashed      bool             `gorm:"default:false;index" json:"isTrashed"`
+	AdminTrashed   bool             `gorm:"default:false;index" json:"adminTrashed"`
+	DeletedByID    *uuid.UUID       `gorm:"type:uuid" json:"deletedById,omitempty"`
+	DeletedByName  string           `gorm:"size:200" json:"deletedByName,omitempty"`
+	ExpiresAt      *time.Time       `json:"expiresAt,omitempty"`
+	UserRole       string           `gorm:"-" json:"userRole,omitempty"`
 }
 
 type JobStatus string
@@ -243,16 +244,17 @@ const (
 
 type TranscriptionJob struct {
 	BaseUUIDModel
-	AccountID    uuid.UUID  `gorm:"type:uuid;index;not null" json:"accountId"`
-	TranscriptID uuid.UUID  `gorm:"type:uuid;index;not null" json:"transcriptId"`
-	FileID       uuid.UUID  `gorm:"type:uuid;index;not null" json:"fileId"`
-	AudioURL     string     `gorm:"size:1000;not null" json:"audioUrl"`
-	ExternalID   string     `gorm:"size:255;index" json:"externalId,omitempty"`
-	Status       JobStatus  `gorm:"size:50;default:'queued';not null" json:"status"`
-	RetryCount   int        `gorm:"default:0" json:"retryCount"`
-	ErrorMessage string     `gorm:"type:text" json:"errorMessage,omitempty"`
-	Language     string     `gorm:"size:50;default:'en'" json:"language"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	AccountID      uuid.UUID  `gorm:"type:uuid;index;not null" json:"accountId"`
+	TranscriptID   uuid.UUID  `gorm:"type:uuid;index;not null" json:"transcriptId"`
+	FileID         uuid.UUID  `gorm:"type:uuid;index;not null" json:"fileId"`
+	AudioURL       string     `gorm:"size:1000;not null" json:"audioUrl"`
+	ExternalID     string     `gorm:"size:255;index" json:"externalId,omitempty"`
+	Status         JobStatus  `gorm:"size:50;default:'queued';not null" json:"status"`
+	RetryCount     int        `gorm:"default:0" json:"retryCount"`
+	ErrorMessage   string     `gorm:"type:text" json:"errorMessage,omitempty"`
+	Language       string     `gorm:"size:50;default:'en'" json:"language"`
+	TargetLanguage string     `gorm:"size:50;default:'en'" json:"targetLanguage,omitempty"`
+	CompletedAt    *time.Time `json:"completedAt,omitempty"`
 }
 
 type Folder struct {

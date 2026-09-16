@@ -63,14 +63,18 @@ func (s *TranscriptionService) pickupPendingJobs() {
 	}
 }
 
-func (s *TranscriptionService) Enqueue(accountID uuid.UUID, transcriptID uuid.UUID, fileID uuid.UUID, audioURL string, language string) (*models.TranscriptionJob, error) {
+func (s *TranscriptionService) Enqueue(accountID uuid.UUID, transcriptID uuid.UUID, fileID uuid.UUID, audioURL string, language string, targetLanguage string) (*models.TranscriptionJob, error) {
+	if targetLanguage == "" {
+		targetLanguage = "en"
+	}
 	job := models.TranscriptionJob{
-		AccountID:    accountID,
-		TranscriptID: transcriptID,
-		FileID:       fileID,
-		AudioURL:     audioURL,
-		Status:       models.JobQueued,
-		Language:     language,
+		AccountID:      accountID,
+		TranscriptID:   transcriptID,
+		FileID:         fileID,
+		AudioURL:       audioURL,
+		Status:         models.JobQueued,
+		Language:       language,
+		TargetLanguage: targetLanguage,
 	}
 
 	if err := s.db.Create(&job).Error; err != nil {
@@ -160,9 +164,9 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 		}
 	}
 
-	log.Printf("[Worker] Submitting job %s to Whisper API for audio: %s", job.ID, job.AudioURL)
+	log.Printf("[Worker] Submitting job %s to Whisper API for audio: %s (source_lang='%s', target_lang='%s')", job.ID, job.AudioURL, job.Language, job.TargetLanguage)
 
-	externalID, err := s.whisperService.Submit(audioURL, true, job.Language)
+	externalID, err := s.whisperService.Submit(audioURL, true, job.Language, job.TargetLanguage)
 	if err != nil {
 		log.Printf("[Worker] Whisper submission error for job %s: %v", job.ID, err)
 		s.handleFailure(&job, fmt.Sprintf("Whisper submission error: %v", err))
@@ -208,7 +212,7 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 				queuedTicks++
 				if strings.HasPrefix(externalID, "primary::") && queuedTicks >= 5 && s.whisperService.HasFallback() {
 					log.Printf("[Worker] Job %s has been queued on Primary for %ds without GPU processing. Failing over to Fallback Whisper Service...", job.ID, queuedTicks*3)
-					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language)
+					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language, job.TargetLanguage)
 					if failoverErr == nil {
 						log.Printf("[Worker] Successfully failed over job %s to Fallback Whisper Service: %s", job.ID, newID)
 						externalID = newID
@@ -236,7 +240,7 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 				// If primary failed, try fallback before giving up
 				if strings.HasPrefix(externalID, "primary::") && s.whisperService.HasFallback() {
 					log.Printf("[Worker] Primary failed for job %s (%s). Attempting failover to Fallback Whisper Service...", job.ID, res.Message)
-					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language)
+					newID, failoverErr := s.whisperService.SubmitFallbackOnly(audioURL, true, job.Language, job.TargetLanguage)
 					if failoverErr == nil {
 						externalID = newID
 						job.ExternalID = newID

@@ -47,6 +47,7 @@ type whisperRequest struct {
 	EnableDiarization bool   `json:"enable_diarization"`
 	EnableTranslation bool   `json:"enable_translation"`
 	Language          string `json:"language"`
+	TargetLanguage    string `json:"target_language"`
 	TranscriptionMode string `json:"transcription_mode"`
 }
 
@@ -130,18 +131,77 @@ func (w *WhisperService) HasFallback() bool {
 	return w.fallbackURL != ""
 }
 
-func (w *WhisperService) SubmitFallbackOnly(audioURL string, diarize bool, language string) (string, error) {
+func normalizeLanguageCode(lang string) string {
+	lang = strings.TrimSpace(strings.ToLower(lang))
+	if lang == "" || lang == "auto" || lang == "auto-detect" || lang == "autodetect" {
+		return ""
+	}
+	switch lang {
+	case "en", "english":
+		return "en"
+	case "fr", "french":
+		return "fr"
+	case "yo", "yoruba":
+		return "yo"
+	case "ig", "igbo":
+		return "ig"
+	case "ha", "hausa":
+		return "ha"
+	case "es", "spanish":
+		return "es"
+	case "pt", "portuguese":
+		return "pt"
+	case "ar", "arabic":
+		return "ar"
+	case "sw", "swahili":
+		return "sw"
+	case "de", "german":
+		return "de"
+	case "zh", "chinese":
+		return "zh"
+	case "ja", "japanese":
+		return "ja"
+	case "pcm", "pidgin":
+		return "pcm"
+	case "it", "italian":
+		return "it"
+	case "ru", "russian":
+		return "ru"
+	default:
+		if len(lang) > 2 && strings.Contains(lang, "-") {
+			return strings.Split(lang, "-")[0]
+		}
+		if len(lang) > 2 && strings.Contains(lang, "_") {
+			return strings.Split(lang, "_")[0]
+		}
+		return lang
+	}
+}
+
+func normalizeTargetLanguage(targetLang string) (string, bool) {
+	targetLang = strings.TrimSpace(strings.ToLower(targetLang))
+	if targetLang == "none" || targetLang == "no translation" || targetLang == "original" {
+		return "", false
+	}
+	code := normalizeLanguageCode(targetLang)
+	if code == "" {
+		code = "en"
+	}
+	return code, true
+}
+
+func (w *WhisperService) SubmitFallbackOnly(audioURL string, diarize bool, language string, targetLanguage string) (string, error) {
 	if w.fallbackURL == "" {
 		return "", fmt.Errorf("fallback Whisper service is not configured")
 	}
-	jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language)
+	jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language, targetLanguage)
 	if err != nil {
 		return "", err
 	}
 	return "fallback::" + jobID, nil
 }
 
-func (w *WhisperService) Submit(audioURL string, diarize bool, language string) (string, error) {
+func (w *WhisperService) Submit(audioURL string, diarize bool, language string, targetLanguage string) (string, error) {
 	if w.primaryURL == "" && w.fallbackURL == "" {
 		return "", fmt.Errorf("no Whisper API URL is configured")
 	}
@@ -150,7 +210,7 @@ func (w *WhisperService) Submit(audioURL string, diarize bool, language string) 
 	if w.primaryURL != "" {
 		if w.isPrimaryReady() {
 			log.Printf("[Whisper] Primary GPU worker is active. Submitting to Primary Whisper Service (%s)...", w.primaryURL)
-			jobID, err := w.submitToEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, audioURL, diarize, language)
+			jobID, err := w.submitToEndpoint("Primary Whisper Service", w.primaryURL, w.primaryToken, audioURL, diarize, language, targetLanguage)
 			if err == nil {
 				log.Printf("[Whisper] Successfully submitted job to Primary Whisper Service: %s", jobID)
 				return "primary::" + jobID, nil
@@ -164,7 +224,7 @@ func (w *WhisperService) Submit(audioURL string, diarize bool, language string) 
 	// 2. Fallback to Secondary Whisper Service
 	if w.fallbackURL != "" {
 		log.Printf("[Whisper] Attempting job submission to Fallback Whisper Service (%s)...", w.fallbackURL)
-		jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language)
+		jobID, err := w.submitToEndpoint("Fallback Whisper Service", w.fallbackURL, w.fallbackToken, audioURL, diarize, language, targetLanguage)
 		if err == nil {
 			log.Printf("[Whisper] Successfully submitted job to Fallback Whisper Service: %s", jobID)
 			return "fallback::" + jobID, nil
@@ -175,21 +235,20 @@ func (w *WhisperService) Submit(audioURL string, diarize bool, language string) 
 	return "", fmt.Errorf("whisper service unavailable")
 }
 
-func (w *WhisperService) submitToEndpoint(serviceName, baseURL, token, audioURL string, diarize bool, language string) (string, error) {
+func (w *WhisperService) submitToEndpoint(serviceName, baseURL, token, audioURL string, diarize bool, language string, targetLanguage string) (string, error) {
 	if baseURL == "" {
 		return "", fmt.Errorf("%s URL is not configured", serviceName)
 	}
 
-	lang := language
-	if lang == "" || lang == "auto" {
-		lang = "en"
-	}
+	apiSourceLang := normalizeLanguageCode(language)
+	apiTargetLang, enableTranslation := normalizeTargetLanguage(targetLanguage)
 
 	reqPayload := whisperRequest{
 		AudioURL:          audioURL,
 		EnableDiarization: diarize,
-		EnableTranslation: false,
-		Language:          lang,
+		EnableTranslation: enableTranslation,
+		Language:          apiSourceLang,
+		TargetLanguage:    apiTargetLang,
 		TranscriptionMode: "accurate",
 	}
 
@@ -197,6 +256,8 @@ func (w *WhisperService) submitToEndpoint(serviceName, baseURL, token, audioURL 
 	if err != nil {
 		return "", err
 	}
+
+	log.Printf("[%s] Submitting transcription payload: %s", serviceName, string(bodyBytes))
 
 	req, err := http.NewRequest("POST", baseURL+"/api/v1/transcribe", bytes.NewBuffer(bodyBytes))
 	if err != nil {

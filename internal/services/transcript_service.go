@@ -171,7 +171,11 @@ func (s *TranscriptService) RetryTranscript(accountID uuid.UUID, id uuid.UUID, a
 		if transcript.AudioFileID != nil {
 			fileID = *transcript.AudioFileID
 		}
-		_, _ = s.transcriptionSvc.Enqueue(accountID, transcript.ID, fileID, transcript.AudioURL, transcript.Language)
+		targetLang := transcript.TargetLanguage
+		if targetLang == "" {
+			targetLang = "en"
+		}
+		_, _ = s.transcriptionSvc.Enqueue(accountID, transcript.ID, fileID, transcript.AudioURL, transcript.Language, targetLang)
 	}
 
 	s.SignAudioURL(&transcript)
@@ -192,14 +196,15 @@ func (s *TranscriptService) GetAudioDownloadURL(accountID uuid.UUID, id uuid.UUI
 }
 
 type CreateTranscriptInput struct {
-	Title       string     `json:"title"`
-	FolderID    *uuid.UUID `json:"folderId"`
-	MatterID    *uuid.UUID `json:"matterId"`
-	AudioFileID *uuid.UUID `json:"audioFileId"`
-	AudioURL    string     `json:"audioUrl"`
-	Language    string     `json:"language"`
-	Flags       []float64  `json:"flags"`
-	Source      string     `json:"source"`
+	Title          string     `json:"title"`
+	FolderID       *uuid.UUID `json:"folderId"`
+	MatterID       *uuid.UUID `json:"matterId"`
+	AudioFileID    *uuid.UUID `json:"audioFileId"`
+	AudioURL       string     `json:"audioUrl"`
+	Language       string     `json:"language"`
+	TargetLanguage string     `json:"targetLanguage"`
+	Flags          []float64  `json:"flags"`
+	Source         string     `json:"source"`
 }
 
 func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.UUID, input CreateTranscriptInput, actor *models.User) (*models.Transcript, error) {
@@ -222,20 +227,26 @@ func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.U
 		ownerName = actor.Name
 	}
 
+	targetLang := input.TargetLanguage
+	if targetLang == "" {
+		targetLang = "en"
+	}
+
 	transcript := models.Transcript{
-		AccountID:    accountID,
-		OwnerID:      ownerID,
-		OwnerName:    ownerName,
-		FolderID:     input.FolderID,
-		MatterID:     input.MatterID,
-		AudioFileID:  input.AudioFileID,
-		AudioURL:     input.AudioURL,
-		Title:        input.Title,
-		Status:       status,
-		Language:     input.Language,
-		Flags:        models.Float64Slice(input.Flags),
-		Source:       source,
-		SpeakerBanks: models.SpeakerBanks{},
+		AccountID:      accountID,
+		OwnerID:        ownerID,
+		OwnerName:      ownerName,
+		FolderID:       input.FolderID,
+		MatterID:       input.MatterID,
+		AudioFileID:    input.AudioFileID,
+		AudioURL:       input.AudioURL,
+		Title:          input.Title,
+		Status:         status,
+		Language:       input.Language,
+		TargetLanguage: targetLang,
+		Flags:          models.Float64Slice(input.Flags),
+		Source:         source,
+		SpeakerBanks:   models.SpeakerBanks{},
 	}
 
 	if err := s.db.Create(&transcript).Error; err != nil {
@@ -251,7 +262,7 @@ func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.U
 		if input.AudioFileID != nil {
 			fileID = *input.AudioFileID
 		}
-		s.transcriptionSvc.Enqueue(accountID, transcript.ID, fileID, input.AudioURL, input.Language)
+		s.transcriptionSvc.Enqueue(accountID, transcript.ID, fileID, input.AudioURL, input.Language, targetLang)
 	}
 
 	s.auditService.Log(&accountID, "", actor.ID, actor.Name, "transcript_created", "transcript", transcript.ID.String(), "Created transcript: "+transcript.Title, "", "")
