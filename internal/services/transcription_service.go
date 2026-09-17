@@ -3,7 +3,10 @@ package services
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -111,9 +114,27 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 
 	audioURL := job.AudioURL
 
-	// If audioURL is a public media link (YouTube, Vimeo, Google Drive, direct web link), download & convert to WAV first
-	if (strings.HasPrefix(audioURL, "http://") || strings.HasPrefix(audioURL, "https://")) && !strings.Contains(audioURL, "storage.googleapis.com") {
-		log.Printf("[Worker] Detected public media link for job %s: %s. Initiating media resolution & conversion...", job.ID, audioURL)
+	// Check if this audioURL refers to an uploaded file already present on the local disk
+	isLocalUpload := false
+	localFilename := ""
+	if parsedURL, err := url.Parse(audioURL); err == nil {
+		localFilename = path.Base(parsedURL.Path)
+	} else {
+		localFilename = filepath.Base(audioURL)
+	}
+
+	localPath := filepath.Join("uploads", localFilename)
+	if localFilename != "" && localFilename != "." && localFilename != "/" {
+		if _, err := os.Stat(localPath); err == nil {
+			isLocalUpload = true
+			log.Printf("[Worker] Detected local upload file on disk for job %s: %s", job.ID, localPath)
+		}
+	}
+
+	// If audioURL is an external public media link (YouTube, Vimeo, Google Drive, direct web link), download & convert to WAV first.
+	// Uploaded media files (containing /uploads/) or existing GCS URLs are never external downloads.
+	if !isLocalUpload && !strings.Contains(audioURL, "/uploads/") && (strings.HasPrefix(audioURL, "http://") || strings.HasPrefix(audioURL, "https://")) && !strings.Contains(audioURL, "storage.googleapis.com") {
+		log.Printf("[Worker] Detected external media link for job %s: %s. Initiating media resolution & conversion...", job.ID, audioURL)
 		wavPath, err := s.mediaService.DownloadAndConvert(audioURL)
 		if err != nil {
 			log.Printf("[Worker] Media resolution/download error for job %s: %v", job.ID, err)
@@ -136,6 +157,27 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 					s.db.Model(&models.Transcript{}).Where("id = ?", job.TranscriptID).Update("audio_url", gcsURL)
 					s.db.Model(&job).Update("audio_url", gcsURL)
 				}
+			}
+		}
+	} else if isLocalUpload && s.storageService != nil {
+		// If GCS is configured, ensure the local upload is synced to GCS
+		f, openErr := os.Open(localPath)
+		if openErr == nil {
+			ext := strings.ToLower(filepath.Ext(localFilename))
+			objectKey := fmt.Sprintf("audio/%s/%s", job.AccountID, localFilename)
+			contentType := "audio/wav"
+			if ext == ".mp3" {
+				contentType = "audio/mpeg"
+			} else if ext == ".m4a" {
+				contentType = "audio/mp4"
+			}
+			gcsURL, uploadErr := s.storageService.UploadDirectStream(f, objectKey, contentType)
+			f.Close()
+			if uploadErr == nil {
+				log.Printf("[Worker] Local upload successfully synced to GCS: %s", gcsURL)
+				audioURL = gcsURL
+				s.db.Model(&models.Transcript{}).Where("id = ?", job.TranscriptID).Update("audio_url", gcsURL)
+				s.db.Model(&job).Update("audio_url", gcsURL)
 			}
 		}
 	}

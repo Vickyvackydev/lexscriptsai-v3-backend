@@ -108,6 +108,7 @@ func main() {
 	e.Static("/uploads", "./uploads")
 
 	v1 := e.Group("/api/v1")
+	v1.Static("/uploads", "./uploads")
 
 	// Public Auth
 	v1.POST("/auth/login", authHandler.Login)
