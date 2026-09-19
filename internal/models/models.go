@@ -74,6 +74,8 @@ type User struct {
 	AvatarInitials   string           `gorm:"size:10" json:"avatarInitials"`
 	AutoSave         bool             `gorm:"default:true" json:"autoSave"`
 	AutoDownload     bool             `gorm:"default:true" json:"autoDownload"`
+	EditorFontSize   string           `gorm:"size:50;default:'14px'" json:"editorFontSize"`
+	EditorFontFamily string           `gorm:"size:100;default:'Inter'" json:"editorFontFamily"`
 	LastActive             *time.Time `json:"lastActive,omitempty"`
 	ResetPasswordToken     string     `gorm:"size:255;index" json:"-"`
 	ResetPasswordExpiresAt *time.Time `json:"-"`

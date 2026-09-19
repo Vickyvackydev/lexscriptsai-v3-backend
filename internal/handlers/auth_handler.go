@@ -144,15 +144,28 @@ func (h *AuthHandler) GetPreferences(c echo.Context) error {
 		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "User not found", nil)
 	}
 
+	fontSize := dbUser.EditorFontSize
+	if fontSize == "" {
+		fontSize = "14px"
+	}
+	fontFamily := dbUser.EditorFontFamily
+	if fontFamily == "" {
+		fontFamily = "Inter"
+	}
+
 	return response.Success(c, http.StatusOK, map[string]interface{}{
-		"autoSave":     dbUser.AutoSave,
-		"autoDownload": dbUser.AutoDownload,
+		"autoSave":         dbUser.AutoSave,
+		"autoDownload":     dbUser.AutoDownload,
+		"editorFontSize":   fontSize,
+		"editorFontFamily": fontFamily,
 	})
 }
 
 type UpdatePreferencesRequest struct {
-	AutoSave     *bool `json:"autoSave"`
-	AutoDownload *bool `json:"autoDownload"`
+	AutoSave         *bool   `json:"autoSave"`
+	AutoDownload     *bool   `json:"autoDownload"`
+	EditorFontSize   *string `json:"editorFontSize"`
+	EditorFontFamily *string `json:"editorFontFamily"`
 }
 
 func (h *AuthHandler) UpdatePreferences(c echo.Context) error {
@@ -173,6 +186,12 @@ func (h *AuthHandler) UpdatePreferences(c echo.Context) error {
 	if req.AutoDownload != nil {
 		updates["auto_download"] = *req.AutoDownload
 	}
+	if req.EditorFontSize != nil {
+		updates["editor_font_size"] = *req.EditorFontSize
+	}
+	if req.EditorFontFamily != nil {
+		updates["editor_font_family"] = *req.EditorFontFamily
+	}
 
 	if len(updates) > 0 {
 		if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
@@ -183,10 +202,21 @@ func (h *AuthHandler) UpdatePreferences(c echo.Context) error {
 	var updatedUser models.User
 	h.db.First(&updatedUser, "id = ?", user.ID)
 
+	fontSize := updatedUser.EditorFontSize
+	if fontSize == "" {
+		fontSize = "14px"
+	}
+	fontFamily := updatedUser.EditorFontFamily
+	if fontFamily == "" {
+		fontFamily = "Inter"
+	}
+
 	return response.Success(c, http.StatusOK, map[string]interface{}{
-		"autoSave":     updatedUser.AutoSave,
-		"autoDownload": updatedUser.AutoDownload,
-		"message":      "Preferences updated successfully",
+		"autoSave":         updatedUser.AutoSave,
+		"autoDownload":     updatedUser.AutoDownload,
+		"editorFontSize":   fontSize,
+		"editorFontFamily": fontFamily,
+		"message":          "Preferences updated successfully",
 	})
 }
 

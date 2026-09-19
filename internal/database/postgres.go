@@ -76,6 +76,8 @@ func Connect(cfg *config.Config) (*DB, error) {
 	db.Exec("ALTER TABLE users ALTER COLUMN account_id DROP NOT NULL;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_save BOOLEAN DEFAULT TRUE;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_download BOOLEAN DEFAULT TRUE;")
+	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS editor_font_size VARCHAR(50) DEFAULT '14px';")
+	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS editor_font_family VARCHAR(100) DEFAULT 'Inter';")
 	db.Exec("ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS flags JSONB;")
 	db.Exec("ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'upload';")
 	db.Exec("ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS target_language VARCHAR(50) DEFAULT 'en';")
