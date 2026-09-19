@@ -72,6 +72,8 @@ func main() {
 	recycleBinHandler := handlers.NewRecycleBinHandler(recycleBinService)
 	searchHandler := handlers.NewSearchHandler(searchService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService, tokenService, db.DB)
+	recordRoomService := services.NewRecordRoomService()
+	recordRoomHandler := handlers.NewRecordRoomHandler(recordRoomService)
 
 	e := echo.New()
 	e.HideBanner = true
@@ -212,6 +214,11 @@ func main() {
 	// WebSocket endpoint for real-time notifications
 	v1.GET("/ws/notifications", notificationHandler.HandleWebSocket)
 
+	// Record Room WebSocket & Webhook Remote Control endpoints
+	v1.GET("/ws/record/:roomKey", recordRoomHandler.HandleWebSocket)
+	v1.POST("/record/:roomKey/command", recordRoomHandler.HandleCommand)
+	v1.GET("/record/:roomKey/info", recordRoomHandler.GetRoomInfo)
+
 	// Webhook endpoint for transcription callbacks
 	v1.POST("/webhooks/transcription", notificationHandler.TranscriptionWebhook)
 
@@ -242,9 +249,13 @@ func main() {
 	authenticated.DELETE("/recycle-bin/:id", recycleBinHandler.PermanentDelete)
 	authenticated.DELETE("/recycle-bin/:id/permanent", recycleBinHandler.PermanentDelete)
 
+	e.Server.ReadHeaderTimeout = 30 * time.Second
+	e.Server.IdleTimeout = 120 * time.Second
+	// ReadTimeout & WriteTimeout remain 0 (unlimited) to support large multi-hour 2GB audio uploads and WebSocket streams
+
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("[Server] LexScriptsAI V3 API listening on port :%s", cfg.Port)
+		log.Printf("[Server] LexScriptsAI V3 API listening on port :%s (2GB upload & multi-hour audio support enabled)", cfg.Port)
 		if err := e.Start(fmt.Sprintf(":%s", cfg.Port)); err != nil && err != http.ErrServerClosed {
 			serverErrors <- err
 		}

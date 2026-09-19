@@ -236,8 +236,10 @@ func (s *CauseListService) CreateMatter(accountID uuid.UUID, input CreateMatterI
 }
 
 type AdjournMatterInput struct {
-	NewDate string `json:"newDate"`
-	Reason  string `json:"reason"`
+	NewDate  string            `json:"newDate"`
+	NewTime  string            `json:"newTime"`
+	Reason   string            `json:"reason"`
+	NextType models.MatterType `json:"nextType"`
 }
 
 func (s *CauseListService) AdjournMatter(accountID uuid.UUID, matterID uuid.UUID, input AdjournMatterInput, actor *models.User) (*models.CauseListItem, error) {
@@ -250,16 +252,24 @@ func (s *CauseListService) AdjournMatter(accountID uuid.UUID, matterID uuid.UUID
 		return nil, errors.New("matter not found")
 	}
 
+	oldDate := matter.Date
 	matter.Status = models.MatterStatusAdjourned
 	matter.AdjournedToDate = input.NewDate
 	matter.AdjournedReason = input.Reason
+	matter.Date = input.NewDate
+	if input.NewTime != "" {
+		matter.Time = input.NewTime
+	}
+	if input.NextType != "" {
+		matter.MatterType = input.NextType
+	}
 
 	if err := s.db.Save(&matter).Error; err != nil {
 		return nil, err
 	}
 
 	s.auditService.Log(&accountID, "", actor.ID, actor.Name, "matter_adjourned", "matter", matter.ID.String(),
-		fmt.Sprintf("Adjourned matter %s from %s to %s (Reason: %s)", matter.CaseNumber, matter.Date, input.NewDate, input.Reason), "", "")
+		fmt.Sprintf("Adjourned matter %s from %s to %s (Reason: %s)", matter.CaseNumber, oldDate, input.NewDate, input.Reason), "", "")
 
 	return &matter, nil
 }

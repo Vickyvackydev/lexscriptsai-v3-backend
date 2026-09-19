@@ -397,7 +397,7 @@ func (s *MediaService) DownloadAndConvert(rawURL string) (string, error) {
 
 	var downloadPath string
 	if useYtDlp {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 		defer cancel()
 
 		dlPath, dlErr := s.downloadWithYtDlp(ctx, host, rawURL, outputBase)
@@ -426,7 +426,7 @@ func (s *MediaService) DownloadAndConvert(rawURL string) (string, error) {
 		ffmpegPath = "/usr/bin/ffmpeg"
 	}
 
-	ctxFFmpeg, cancelFFmpeg := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctxFFmpeg, cancelFFmpeg := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancelFFmpeg()
 
 	cmd := exec.CommandContext(ctxFFmpeg, ffmpegPath,

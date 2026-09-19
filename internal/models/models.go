@@ -136,6 +136,56 @@ func (f *Float64Slice) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, f)
 }
 
+type FlagItem struct {
+	Time float64 `json:"time"`
+	Note string  `json:"note,omitempty"`
+}
+
+type FlagsData []FlagItem
+
+func (f FlagsData) Value() (driver.Value, error) {
+	if f == nil {
+		return "[]", nil
+	}
+	return json.Marshal(f)
+}
+
+func (f *FlagsData) Scan(value interface{}) error {
+	if value == nil {
+		*f = FlagsData{}
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("type assertion to []byte/string failed")
+	}
+	if len(bytes) == 0 {
+		*f = FlagsData{}
+		return nil
+	}
+	var items []FlagItem
+	if err := json.Unmarshal(bytes, &items); err == nil {
+		*f = items
+		return nil
+	}
+	var floatSlice []float64
+	if err := json.Unmarshal(bytes, &floatSlice); err == nil {
+		items = make([]FlagItem, len(floatSlice))
+		for i, val := range floatSlice {
+			items[i] = FlagItem{Time: val}
+		}
+		*f = items
+		return nil
+	}
+	*f = FlagsData{}
+	return nil
+}
+
 type MemberPermission struct {
 	BaseUUIDModel
 	AccountID               uuid.UUID   `gorm:"type:uuid;index;not null" json:"accountId"`
@@ -223,7 +273,7 @@ type Transcript struct {
 	Language       string           `gorm:"size:50;default:'en'" json:"language"`
 	TargetLanguage string           `gorm:"size:50;default:'en'" json:"targetLanguage,omitempty"`
 	SpeakerBanks   SpeakerBanks     `gorm:"type:jsonb" json:"speakerBanks"`
-	Flags          Float64Slice     `gorm:"type:jsonb" json:"flags,omitempty"`
+	Flags          FlagsData        `gorm:"type:jsonb" json:"flags,omitempty"`
 	Source         string           `gorm:"size:50;default:'upload';index" json:"source,omitempty"`
 	IsTrashed      bool             `gorm:"default:false;index" json:"isTrashed"`
 	AdminTrashed   bool             `gorm:"default:false;index" json:"adminTrashed"`

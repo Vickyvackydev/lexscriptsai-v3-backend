@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -196,15 +197,15 @@ func (s *TranscriptService) GetAudioDownloadURL(accountID uuid.UUID, id uuid.UUI
 }
 
 type CreateTranscriptInput struct {
-	Title          string     `json:"title"`
-	FolderID       *uuid.UUID `json:"folderId"`
-	MatterID       *uuid.UUID `json:"matterId"`
-	AudioFileID    *uuid.UUID `json:"audioFileId"`
-	AudioURL       string     `json:"audioUrl"`
-	Language       string     `json:"language"`
-	TargetLanguage string     `json:"targetLanguage"`
-	Flags          []float64  `json:"flags"`
-	Source         string     `json:"source"`
+	Title          string          `json:"title"`
+	FolderID       *uuid.UUID      `json:"folderId"`
+	MatterID       *uuid.UUID      `json:"matterId"`
+	AudioFileID    *uuid.UUID      `json:"audioFileId"`
+	AudioURL       string          `json:"audioUrl"`
+	Language       string          `json:"language"`
+	TargetLanguage string          `json:"targetLanguage"`
+	Flags          json.RawMessage `json:"flags"`
+	Source         string          `json:"source"`
 }
 
 func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.UUID, input CreateTranscriptInput, actor *models.User) (*models.Transcript, error) {
@@ -232,19 +233,62 @@ func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.U
 		targetLang = "en"
 	}
 
+	folderID := input.FolderID
+	matterID := input.MatterID
+
+	// Auto-assign folder if transcript is associated with a matter or matches matter name
+	if folderID == nil {
+		if matterID != nil {
+			var matter models.CauseListItem
+			if err := s.db.Where("id = ? AND account_id = ?", *matterID, accountID).First(&matter).Error; err == nil {
+				if matter.FolderID != nil {
+					folderID = matter.FolderID
+				}
+			}
+		}
+		if folderID == nil && strings.TrimSpace(input.Title) != "" {
+			var matter models.CauseListItem
+			cleanTitle := strings.TrimSpace(input.Title)
+			if err := s.db.Where("account_id = ? AND folder_id IS NOT NULL AND (LOWER(case_number) = LOWER(?) OR LOWER(cause_list_name) = LOWER(?) OR LOWER(?) LIKE '%' || LOWER(case_number) || '%')", accountID, cleanTitle, cleanTitle, cleanTitle).First(&matter).Error; err == nil {
+				if matter.FolderID != nil {
+					folderID = matter.FolderID
+					if matterID == nil {
+						matterID = &matter.ID
+					}
+				}
+			}
+		}
+	}
+
+	var flagsData models.FlagsData
+	if len(input.Flags) > 0 {
+		var items []models.FlagItem
+		if err := json.Unmarshal(input.Flags, &items); err == nil && len(items) > 0 && items[0].Time >= 0 {
+			flagsData = items
+		} else {
+			var floats []float64
+			if err := json.Unmarshal(input.Flags, &floats); err == nil {
+				flagsData = make([]models.FlagItem, len(floats))
+				for i, val := range floats {
+					flagsData[i] = models.FlagItem{Time: val}
+				}
+			}
+		}
+	}
+
 	transcript := models.Transcript{
 		AccountID:      accountID,
 		OwnerID:        ownerID,
 		OwnerName:      ownerName,
-		FolderID:       input.FolderID,
-		MatterID:       input.MatterID,
+		FolderID:       folderID,
+		MatterID:       matterID,
 		AudioFileID:    input.AudioFileID,
 		AudioURL:       input.AudioURL,
 		Title:          input.Title,
 		Status:         status,
 		Language:       input.Language,
 		TargetLanguage: targetLang,
-		Flags:          models.Float64Slice(input.Flags),
+		Flags:          flagsData,
 		Source:         source,
 		SpeakerBanks:   models.SpeakerBanks{},
 	}
@@ -253,8 +297,8 @@ func (s *TranscriptService) CreateTranscript(accountID uuid.UUID, ownerID uuid.U
 		return nil, fmt.Errorf("failed to create transcript: %w", err)
 	}
 
-	if input.FolderID != nil {
-		s.db.Model(&models.Folder{}).Where("id = ? AND account_id = ?", *input.FolderID, accountID).UpdateColumn("transcript_count", gorm.Expr("transcript_count + 1"))
+	if folderID != nil {
+		s.db.Model(&models.Folder{}).Where("id = ? AND account_id = ?", *folderID, accountID).UpdateColumn("transcript_count", gorm.Expr("transcript_count + 1"))
 	}
 
 	if input.AudioURL != "" && s.transcriptionSvc != nil {

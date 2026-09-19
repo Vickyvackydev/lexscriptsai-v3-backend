@@ -218,24 +218,25 @@ func (s *TranscriptionService) processJob(jobID uuid.UUID) {
 	job.ExternalID = externalID
 	s.db.Save(&job)
 
-	// Poll Whisper API every 3 seconds
+	// Poll Whisper API every 3 seconds (supports up to 3 hours for long 10-hour multi-hour recordings)
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
-	timeout := time.After(30 * time.Minute)
+	const maxJobDuration = 3 * time.Hour
+	timeout := time.After(maxJobDuration)
 
 	consecutiveErrors := 0
 	queuedTicks := 0
 	for {
 		select {
 		case <-timeout:
-			s.handleFailure(&job, "Transcription timed out after 30 minutes")
+			s.handleFailure(&job, fmt.Sprintf("Transcription timed out after %v", maxJobDuration))
 			return
 		case <-ticker.C:
 			res, err := s.whisperService.GetResult(externalID)
 			if err != nil {
 				log.Printf("[Worker] Poll error for external ID %s: %v", externalID, err)
 				consecutiveErrors++
-				if consecutiveErrors >= 30 {
+				if consecutiveErrors >= 60 {
 					s.handleFailure(&job, fmt.Sprintf("Polling Whisper failed: %v", err))
 					return
 				}
